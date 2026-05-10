@@ -17,12 +17,7 @@ const DEFAULT_INPUT_HEIGHT: u16 = 5;
 const MIN_INPUT_HEIGHT: u16 = 2;
 const SELECTED_SEPARATOR: &str = " | ";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TagPickerFocus {
-    Input,
-    SelectedTags,
-}
-
+/// Tag picker widget.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagPicker {
     available_tags: Vec<String>,
@@ -30,6 +25,10 @@ pub struct TagPicker {
     accent_color: Color,
 }
 
+/// Tag picker widget state.
+///
+/// [TagPicker] follows Ratatui List widget's implementation pattern and
+/// implements [StatefulWidget] so it uses external state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagPickerState {
     selected_indices: Vec<usize>,
@@ -53,8 +52,12 @@ impl Default for TagPickerState {
     }
 }
 
+/// Optional configuration for [TagPicker].
 pub struct TagPickerConfig {
+    /// Set the height of the widget's upper part made of the text input and
+    /// matches.
     pub input_height: u16,
+    /// Navigation highlight color.
     pub accent_color: Color,
 }
 
@@ -67,7 +70,14 @@ impl Default for TagPickerConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TagPickerFocus {
+    Input,
+    SelectedTags,
+}
+
 impl TagPicker {
+    /// Create a widget with a set of tags to pick from.
     pub fn new<I, S>(available_tags: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -76,24 +86,23 @@ impl TagPicker {
         Self::with_config(available_tags, TagPickerConfig::default())
     }
 
+    /// Create a picker with additional configuration.
     pub fn with_config<I, S>(available_tags: I, config: TagPickerConfig) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
+        let available_tags = available_tags
+            .into_iter()
+            .map(Into::into)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         Self {
-            available_tags: normalize_available_tags(available_tags),
+            available_tags,
             input_height: config.input_height.max(MIN_INPUT_HEIGHT),
             accent_color: config.accent_color,
         }
-    }
-
-    pub fn set_available_tags<I, S>(&mut self, available_tags: I)
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        self.available_tags = normalize_available_tags(available_tags);
     }
 
     fn tag(&self, index: usize) -> Option<&str> {
@@ -277,10 +286,14 @@ impl TagPicker {
 }
 
 impl TagPickerState {
+    /// Create the initial state.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Create state with tags preselected.
+    ///
+    /// This requires the widget because it is the only holder of the tag data.
     pub fn new_with_selected_tags<I, S>(picker: &TagPicker, selected_tags: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -291,10 +304,12 @@ impl TagPickerState {
         state
     }
 
+    /// Get indices of selected tags.
     pub fn selected_indices(&self) -> &[usize] {
         &self.selected_indices
     }
 
+    /// Use the widget's data to convert selected indices to actual tags.
     pub fn selected_tags<'a>(
         &'a self,
         picker: &'a TagPicker,
@@ -304,6 +319,7 @@ impl TagPickerState {
             .filter_map(|&index| picker.tag(index))
     }
 
+    /// Cycle focus between the tag search input and selected tags.
     pub fn cycle_focus(&mut self) {
         self.focus = match self.focus {
             TagPickerFocus::Input => TagPickerFocus::SelectedTags,
@@ -311,19 +327,23 @@ impl TagPickerState {
         };
     }
 
+    /// Focus widget's input area.
     pub fn focus_input(&mut self) {
         self.focus = TagPickerFocus::Input;
     }
 
+    /// Focus widget's selected tags area.
     pub fn focus_selected_tags(&mut self) {
         self.focus = TagPickerFocus::SelectedTags;
     }
 
+    /// Clears query text.
     pub fn clear_input(&mut self) {
         self.input.clear();
         self.match_cursor = 0;
     }
 
+    /// Insert a character into the tag search input.
     pub fn insert_char(&mut self, ch: char) {
         if self.focus != TagPickerFocus::Input || ch.is_control() {
             return;
@@ -333,6 +353,7 @@ impl TagPickerState {
         self.match_cursor = 0;
     }
 
+    /// Delete a character from the search input.
     pub fn backspace(&mut self) {
         if self.focus != TagPickerFocus::Input {
             return;
@@ -342,6 +363,9 @@ impl TagPickerState {
         self.match_cursor = 0;
     }
 
+    /// Move to next candidate:
+    /// - Focused input will scroll the matching tags list
+    /// - Focused selected tags area will move tag selection
     pub fn move_next(&mut self, picker: &TagPicker) {
         match self.focus {
             TagPickerFocus::Input => {
@@ -360,6 +384,9 @@ impl TagPickerState {
         }
     }
 
+    /// Move to previous candidate:
+    /// - Focused input will scroll the matching tags list
+    /// - Focused selected tags area will move tag selection
     pub fn move_previous(&mut self, picker: &TagPicker) {
         match self.focus {
             TagPickerFocus::Input => {
@@ -386,6 +413,7 @@ impl TagPickerState {
         }
     }
 
+    /// Add the highlighted tag to the result set.
     pub fn confirm(&mut self, picker: &TagPicker) {
         if self.focus != TagPickerFocus::Input {
             return;
@@ -405,6 +433,7 @@ impl TagPickerState {
         self.match_cursor = 0;
     }
 
+    /// Remove the highlighted tag from the result set.
     pub fn remove_selected_tag(&mut self, picker: &TagPicker) {
         if self.focus != TagPickerFocus::SelectedTags || self.selected_indices.is_empty() {
             return;
@@ -477,19 +506,6 @@ impl StatefulWidget for &TagPicker {
         self.render_input_area(state, sections[0], buf);
         self.render_selected_area(state, sections[1], buf);
     }
-}
-
-fn normalize_available_tags<I, S>(available_tags: I) -> Vec<String>
-where
-    I: IntoIterator<Item = S>,
-    S: Into<String>,
-{
-    available_tags
-        .into_iter()
-        .map(Into::into)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
 }
 
 fn sync_scroll_to_visible(
@@ -732,24 +748,6 @@ mod tests {
 
         assert!(rendered.contains("..."));
         assert!(rendered.contains("tag-4"));
-    }
-
-    #[test]
-    fn state_selection_is_pruned_when_available_tags_change() {
-        let mut picker = TagPicker::new(["rust", "ratatui"]);
-        let mut state = TagPickerState::new_with_selected_tags(&picker, ["rust", "ratatui"]);
-
-        picker.set_available_tags(["rust"]);
-        (&picker).render(
-            Rect::new(0, 0, 50, 10),
-            &mut Buffer::empty(Rect::new(0, 0, 50, 10)),
-            &mut state,
-        );
-
-        assert_eq!(
-            state.selected_tags(&picker).collect::<Vec<_>>(),
-            vec!["rust"]
-        );
     }
 
     #[test]

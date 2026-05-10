@@ -2,7 +2,13 @@
 name = "ratatui-tag-picker"
 version = "0.1.0"
 edition = "2024"
-license = "MPL-2.0"
+license = "MIT"
+description = "Ratatui tag picker widget"
+repository = "https://github.com/fominok/ratatui-tag-picker"
+homepage = "https://github.com/fominok/ratatui-tag-picker"
+documentation = "https://docs.rs/ratatui-tag-picker"
+keywords = ["ratatui", "tui", "widget", "picker"]
+categories = ["command-line-interface"]
 
 [dependencies]
 ratatui-core = "0.1.0"

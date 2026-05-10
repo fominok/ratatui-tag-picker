@@ -27,6 +27,7 @@ enum TagPickerFocus {
 pub struct TagPicker {
     available_tags: Vec<String>,
     input_height: u16,
+    accent_color: Color,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,23 +53,38 @@ impl Default for TagPickerState {
     }
 }
 
+pub struct TagPickerConfig {
+    pub input_height: u16,
+    pub accent_color: Color,
+}
+
+impl Default for TagPickerConfig {
+    fn default() -> Self {
+        Self {
+            input_height: DEFAULT_INPUT_HEIGHT,
+            accent_color: Color::Yellow,
+        }
+    }
+}
+
 impl TagPicker {
     pub fn new<I, S>(available_tags: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        Self::new_with_input_height(available_tags, DEFAULT_INPUT_HEIGHT)
+        Self::with_config(available_tags, TagPickerConfig::default())
     }
 
-    pub fn new_with_input_height<I, S>(available_tags: I, input_height: u16) -> Self
+    pub fn with_config<I, S>(available_tags: I, config: TagPickerConfig) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
         Self {
             available_tags: normalize_available_tags(available_tags),
-            input_height: input_height.max(MIN_INPUT_HEIGHT),
+            input_height: config.input_height.max(MIN_INPUT_HEIGHT),
+            accent_color: config.accent_color,
         }
     }
 
@@ -144,16 +160,13 @@ impl TagPicker {
     }
 
     fn render_input_area(&self, state: &TagPickerState, area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title("Input")
-            .border_style(focus_style(state.focus == TagPickerFocus::Input));
+        let block = Block::default().borders(Borders::BOTTOM);
         let inner = block.inner(area);
         block.render(area, buf);
 
         let matches = self.matched_tag_indices(state);
         let mut lines = vec![Line::from(vec![
-            Span::styled("> ", Style::new().fg(Color::Yellow)),
+            Span::styled("> ", Style::new().fg(self.accent_color)),
             Span::raw(if state.input.is_empty() {
                 "<type to search>".to_string()
             } else {
@@ -181,17 +194,14 @@ impl TagPicker {
                             let Some(tag) = self.tag(matches[index]) else {
                                 continue;
                             };
-                            let prefix = if index == state.match_cursor {
-                                "> "
-                            } else {
-                                "  "
-                            };
-                            let style = if index == state.match_cursor {
-                                Style::new().fg(Color::Black).bg(Color::Cyan)
+                            let style = if index == state.match_cursor
+                                && state.focus == TagPickerFocus::Input
+                            {
+                                Style::new().fg(Color::Black).bg(self.accent_color)
                             } else {
                                 Style::new().fg(Color::DarkGray)
                             };
-                            lines.push(Line::from(Span::styled(format!("{prefix}{tag}"), style)));
+                            lines.push(Line::from(Span::styled(format!("{tag}"), style)));
                         }
                     }
                 }
@@ -204,13 +214,6 @@ impl TagPicker {
     }
 
     fn render_selected_area(&self, state: &mut TagPickerState, area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title("Selected")
-            .border_style(focus_style(state.focus == TagPickerFocus::SelectedTags));
-        let inner = block.inner(area);
-        block.render(area, buf);
-
         let line = if state.selected_indices.is_empty() {
             Line::from(Span::styled(
                 "No tags selected",
@@ -233,7 +236,7 @@ impl TagPicker {
 
                 let is_selected = index == state.selected_cursor;
                 if is_selected {
-                    let text = format!("[{tag}]");
+                    let text = format!("{tag}");
                     let separator_width = SELECTED_SEPARATOR.chars().count();
                     let start = if index > 0 {
                         line_width.saturating_sub(separator_width)
@@ -246,9 +249,9 @@ impl TagPicker {
                     }
                     selected_bounds = Some((start, end));
                     let style = if state.focus == TagPickerFocus::SelectedTags {
-                        Style::new().fg(Color::Black).bg(Color::Yellow)
+                        Style::new().fg(Color::Black).bg(self.accent_color)
                     } else {
-                        Style::new().fg(Color::Yellow)
+                        Style::new().fg(Color::default())
                     };
                     line_width += text.chars().count();
                     spans.push(Span::styled(text, style));
@@ -260,7 +263,7 @@ impl TagPicker {
 
             sync_scroll_to_visible(
                 &mut state.selected_scroll_x,
-                inner.width as usize,
+                area.width as usize,
                 line_width,
                 selected_bounds,
             );
@@ -269,7 +272,7 @@ impl TagPicker {
 
         Paragraph::new(vec![line])
             .scroll((0, state.selected_scroll_x.min(u16::MAX as usize) as u16))
-            .render(inner, buf);
+            .render(area, buf);
     }
 }
 
@@ -476,14 +479,6 @@ impl StatefulWidget for &TagPicker {
     }
 }
 
-fn focus_style(is_focused: bool) -> Style {
-    if is_focused {
-        Style::new().fg(Color::Yellow)
-    } else {
-        Style::new()
-    }
-}
-
 fn normalize_available_tags<I, S>(available_tags: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
@@ -606,6 +601,7 @@ mod tests {
         MatchRow, TagPicker, TagPickerFocus, TagPickerState, fuzzy_score, sync_scroll_to_visible,
         visible_match_rows,
     };
+    use crate::TagPickerConfig;
 
     #[test]
     fn fuzzy_score_prefers_prefix_and_contiguous_matches() {
@@ -680,27 +676,14 @@ mod tests {
     }
 
     #[test]
-    fn rendering_shows_separator_and_bracketed_selection() {
-        let picker = TagPicker::new(["rust", "ratatui"]);
-        let mut state = TagPickerState::new_with_selected_tags(&picker, ["rust", "ratatui"]);
-        state.cycle_focus();
-        let mut buffer = Buffer::empty(Rect::new(0, 0, 50, 10));
-
-        (&picker).render(buffer.area, &mut buffer, &mut state);
-
-        let rendered = buffer
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-
-        assert!(rendered.contains("Input"));
-        assert!(rendered.contains("[rust] | ratatui"));
-    }
-
-    #[test]
     fn constructor_clamps_input_height() {
-        let picker = TagPicker::new_with_input_height(["rust"], 1);
+        let picker = TagPicker::with_config(
+            ["rust"],
+            TagPickerConfig {
+                input_height: 1,
+                ..Default::default()
+            },
+        );
 
         assert_eq!(picker.input_height, 2);
     }
@@ -722,11 +705,14 @@ mod tests {
 
     #[test]
     fn rendering_overflowing_matches_shows_ellipsis() {
-        let picker = TagPicker::new_with_input_height(
+        let picker = TagPicker::with_config(
             [
                 "tag-0", "tag-1", "tag-2", "tag-3", "tag-4", "tag-5", "tag-6", "tag-7",
             ],
-            4,
+            TagPickerConfig {
+                input_height: 4,
+                ..Default::default()
+            },
         );
         let mut state = TagPickerState::new();
         state.insert_char('t');

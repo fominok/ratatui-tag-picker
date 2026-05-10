@@ -8,7 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use ratatui_tag_picker::{TagPicker, TagPickerState};
+use ratatui_tag_picker::{TagPicker, TagPickerConfig, TagPickerState};
 
 fn main() -> io::Result<()> {
     ratatui::run(|terminal| {
@@ -37,7 +37,7 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let picker = TagPicker::new_with_input_height(
+        let picker = TagPicker::with_config(
             [
                 "backend",
                 "bug",
@@ -54,7 +54,10 @@ impl App {
                 "ux",
                 "wip",
             ],
-            5,
+            TagPickerConfig {
+                input_height: 5,
+                accent_color: Color::Green,
+            },
         );
         let picker_state =
             TagPickerState::new_with_selected_tags(&picker, ["ratatui", "rust", "ui"]);
